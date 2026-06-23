@@ -2030,6 +2030,7 @@ fun BoxScope.ChatItemsList(
                           .padding(start = (MEMBER_IMAGE_SIZE * fontSizeSqrtMultiplier) + DEFAULT_PADDING_HALF)
                           .weight(1f, false),
                         fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colors.secondary,
                         overflow = TextOverflow.Ellipsis,
                         maxLines = 1

@@ -325,7 +325,7 @@ func messageText(
             res.append(NSAttributedString(string: sender + ": ", attributes: plain))
         } else {
             var attrs = plain
-            attrs[.font] = UIFont(descriptor: descr.addingAttributes([.traits: [UIFontDescriptor.TraitKey.weight: UIFont.Weight.medium]]), size: descr.pointSize)
+            attrs[.font] = UIFont(descriptor: descr.addingAttributes([.traits: [UIFontDescriptor.TraitKey.weight: UIFont.Weight.bold]]), size: descr.pointSize)
             res.append(NSAttributedString(string: sender, attributes: attrs))
             res.append(NSAttributedString(string: ": ", attributes: plain))
         }
