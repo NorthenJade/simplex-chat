@@ -1909,6 +1909,19 @@ struct ChatView: View {
             }
         }
 
+        // Mirrors ChatItemView's decision of whether an item is rendered with the framed bubble.
+        // When true for a group received message, the sender name is shown inside the bubble
+        // (by FramedItemView), so the above-bubble name must be hidden to avoid duplication.
+        private func usesFramedView(_ ci: ChatItem) -> Bool {
+            if ci.meta.itemDeleted != nil && ci.isDeletedContent { return false }
+            if ci.quotedItem == nil && ci.meta.itemForwarded == nil && ci.meta.itemDeleted == nil && !ci.meta.isLive {
+                if ci.content.msgContent == nil { return false }
+                if let mc = ci.content.msgContent, mc.isText && isShortEmoji(ci.content.text) { return false }
+                if ci.content.text.isEmpty, case .voice = ci.content.msgContent { return false }
+            }
+            return true
+        }
+
         @ViewBuilder func chatItemListView(
             _ range: ClosedRange<Int>?,
             _ showAvatar: Bool,
@@ -1987,7 +2000,7 @@ struct ChatView: View {
                case let .group(groupInfo, _) = chat.chatInfo {
                 if showAvatar {
                     VStack(alignment: .leading, spacing: 4) {
-                        if ci.content.showMemberName {
+                        if ci.content.showMemberName && !usesFramedView(ci) {
                             Group {
                                 let (prevMember, memCount): (GroupMember?, Int) =
                                 if let range = range {

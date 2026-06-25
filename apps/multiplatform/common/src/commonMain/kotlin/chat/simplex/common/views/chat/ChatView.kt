@@ -2069,7 +2069,17 @@ fun BoxScope.ChatItemsList(
                       }
                     }
                   }
-                  if (cItem.content.showMemberName) {
+                  // When the item is rendered with the framed bubble, the sender name is shown
+                  // inside the bubble (by FramedItemView), so hide the above-bubble name to avoid duplication.
+                  val nameShownInBubble = (cItem.content is CIContent.SndMsgContent || cItem.content is CIContent.RcvMsgContent) &&
+                      !(cItem.meta.itemDeleted != null && (!revealed.value || cItem.isDeletedContent)) &&
+                      run {
+                        if (cItem.quotedItem == null && cItem.meta.itemForwarded == null && cItem.meta.itemDeleted == null && !cItem.meta.isLive) {
+                          val mc = cItem.content.msgContent
+                          !((mc is MsgContent.MCText && isShortEmoji(cItem.content.text)) || (mc is MsgContent.MCVoice && cItem.content.text.isEmpty()))
+                        } else true
+                      }
+                  if (cItem.content.showMemberName && !nameShownInBubble) {
                     DependentLayout(Modifier, CHAT_BUBBLE_LAYOUT_ID) {
                       MemberNameAndRole(range)
                       Item()

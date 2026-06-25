@@ -57,6 +57,9 @@ struct FramedItemView: View {
                     framedItemHeader(caption: Text("LIVE"))
                 }
 
+                if case let .groupRcv(groupMember) = chatItem.chatDir {
+                    ciGroupSenderView(groupMember)
+                }
                 if let qi = chatItem.quotedItem {
                     ciQuoteView(qi)
                         .simultaneousGesture(TapGesture().onEnded {
@@ -266,7 +269,17 @@ struct FramedItemView: View {
             // if enable this always, size of the framed voice message item will be incorrect after end of playback
             .overlay { if case .voice = chatItem.content.msgContent {} else { DetermineWidth() } }
             .frame(minWidth: msgWidth, alignment: .leading)
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(qi.chatDir == .groupSnd ? Color.accentColor : Color(theme.colors.secondary))
+                    .frame(width: 3)
+                    .cornerRadius(1.5)
+                    .padding(.vertical, 6)
+            }
             .background(backgroundColor)
+            .cornerRadius(8)
+            .padding(.horizontal, 8)
+            .padding(.top, 6)
             .environment(\.containerBackground, UIColor(backgroundColor))
         if let mediaWidth = maxMediaWidth(), mediaWidth < maxWidth {
             v.frame(maxWidth: mediaWidth, alignment: .leading)
@@ -311,6 +324,37 @@ struct FramedItemView: View {
             .padding(.trailing, 6)
     }
     
+    @ViewBuilder private func ciGroupSenderView(_ groupMember: GroupMember) -> some View {
+        let isChannel = chat.chatInfo.isChannel
+        let role = groupMember.memberRole
+        HStack(spacing: 6) {
+            NameWithBadge(
+                Text(groupMember.chatViewName)
+                    .font(.caption)
+                    .foregroundColor(theme.colors.secondary),
+                groupMember.nameBadge,
+                .caption1
+            )
+            .lineLimit(1)
+            Spacer(minLength: 0)
+            if role > .member {
+                Text(role.text(isChannel: isChannel))
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(theme.colors.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color(theme.colors.secondary).opacity(0.15))
+                    .cornerRadius(4)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+        .frame(minWidth: msgWidth, alignment: .leading)
+        .overlay(DetermineWidth())
+    }
+
     private func membership() -> GroupMember? {
         switch chat.chatInfo {
         case let .group(groupInfo: groupInfo, _): return groupInfo.membership

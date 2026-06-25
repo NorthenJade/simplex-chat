@@ -2,6 +2,7 @@ package chat.simplex.common.views.chat.item
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,6 +17,7 @@ import dev.icerock.moko.resources.compose.painterResource
 import dev.icerock.moko.resources.compose.stringResource
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import chat.simplex.common.model.*
@@ -134,14 +136,27 @@ fun FramedItemView(
   }
 
   @Composable
-  fun ciQuoteView(qi: CIQuote) {
+  fun ciQuoteView(qi: CIQuote?) {
+    if (qi == null) return
     val sentColor = MaterialTheme.appColors.sentQuote
     val receivedColor = MaterialTheme.appColors.receivedQuote
     Row(
       Modifier
-        .background(if (sent) sentColor else receivedColor)
+        .padding(horizontal = 8.dp, vertical = 6.dp)
+        .background(if (sent) sentColor else receivedColor, shape = RoundedCornerShape(8.dp))
         .fillMaxWidth()
+        .height(IntrinsicSize.Min)
     ) {
+      Box(
+        Modifier
+          .padding(start = 6.dp, top = 6.dp, bottom = 6.dp, end = 0.dp)
+          .width(3.dp)
+          .fillMaxHeight()
+          .background(
+            if (qi.chatDir is CIDirection.GroupSnd) CurrentColors.value.colors.primary else CurrentColors.value.colors.secondary,
+            shape = RoundedCornerShape(1.5.dp)
+          )
+      )
       when (qi.content) {
         is MsgContent.MCImage -> {
           Box(Modifier.fillMaxWidth().weight(1f)) {
@@ -269,6 +284,41 @@ fun FramedItemView(
               FramedItemHeader(stringResource(MR.strings.live), false)
             }
           }
+          @Composable
+          fun GroupSenderName() {
+            if (ci.chatDir is CIDirection.GroupRcv) {
+              val member = ci.chatDir.groupMember
+              val role = member.memberRole
+              Row(
+                Modifier
+                  .padding(horizontal = 12.dp)
+                  .padding(top = 6.dp)
+                  .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+              ) {
+                NameWithBadge(
+                  member.chatViewName,
+                  member.nameBadge,
+                  Modifier.weight(1f, fill = false),
+                  style = TextStyle(fontSize = 13.sp, color = MaterialTheme.colors.secondary),
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis
+                )
+                if (role > GroupMemberRole.Member) {
+                  Spacer(Modifier.width(6.dp))
+                  Text(
+                    role.text(isChannel = (chatInfo as? ChatInfo.Group)?.groupInfo?.isChannel ?: false),
+                    style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colors.secondary),
+                    maxLines = 1,
+                    modifier = Modifier
+                      .background(MaterialTheme.colors.secondary.copy(alpha = 0.15f), shape = RoundedCornerShape(4.dp))
+                      .padding(horizontal = 6.dp, vertical = 2.dp)
+                  )
+                }
+              }
+            }
+          }
           if (ci.quotedItem != null) {
             Column(
               Modifier
@@ -289,10 +339,12 @@ fun FramedItemView(
                 .onRightClick { showMenu.value = true }
             ) {
               Header()
+              GroupSenderName()
               ciQuoteView(ci.quotedItem)
             }
           } else {
             Header()
+            GroupSenderName()
             if (ci.meta.itemForwarded != null) {
               FramedItemHeader(ci.meta.itemForwarded.text(chatInfo.chatType), true, painterResource(MR.images.ic_forward), pad = true)
             }
