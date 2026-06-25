@@ -25,9 +25,11 @@ fun DefaultDropdownMenu(
       expanded = showMenu.value,
       onDismissRequest = { showMenu.value = false },
       modifier = modifier
-        .widthIn(min = 250.dp)
+        // Make the menu thinner by reducing the minimum width
+        .widthIn(min = 200.dp)
         .background(MaterialTheme.colors.surface)
-        .padding(vertical = 4.dp),
+        // Keep only small vertical padding; avoid extra right padding
+        .padding(vertical = 2.dp),
       offset = offset,
     ) {
       dropdownMenuItems?.invoke()

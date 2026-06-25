@@ -355,25 +355,53 @@ fun ChatItemView(
             }
 
             @Composable
-            fun MsgReactionsMenu() {
-              val rs = MsgReaction.supported.mapNotNull { r ->
-                if (null == cItem.reactions.find { it.userReacted && it.reaction.text == r.text }) {
-                  r
-                } else {
-                  null
-                }
-              }
+            fun MsgReactionsMenu(menuSurfaceColor: Color) {
+              val rs = MsgReaction.supported
               if (rs.isNotEmpty()) {
-                Row(modifier = Modifier.padding(horizontal = DEFAULT_PADDING).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                  rs.forEach() { r ->
-                    Box(
-                      Modifier.size(36.dp).clip(CircleShape).clickable {
-                        setReaction(cInfo, cItem, true, r)
-                        showMenu.value = false
-                      },
-                      contentAlignment = Alignment.Center
-                    ) {
-                      ReactionIcon(r.text, 12.sp)
+                // Single rounded bubble for reactions with the same background as the context menu
+                Surface(
+                  shape = RoundedCornerShape(24.dp),
+                  color = menuSurfaceColor,
+                ) {
+                  Row(
+                    modifier = Modifier
+                      .padding(horizontal = DEFAULT_PADDING, vertical = 6.dp)
+                      .horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    rs.forEach { r ->
+                      val selected = cItem.reactions.any { it.userReacted && it.reaction.text == r.text }
+
+                      // Base hit target
+                      var itemModifier = Modifier
+                        .padding(horizontal = 2.dp, vertical = 2.dp)
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable {
+                          if (selected) {
+                            setReaction(cInfo, cItem, false, r)
+                            // Close the menu after picking a reaction per request
+                            showMenu.value = false
+                          } else if (cItem.allowAddReaction) {
+                            setReaction(cInfo, cItem, true, r)
+                            // Close the menu after picking a reaction per request
+                            showMenu.value = false
+                          }
+                        }
+
+                      if (selected) {
+                        // Show a subtle bubble only when selected
+                        itemModifier = itemModifier
+                          .background(MaterialTheme.colors.primary.copy(alpha = 0.18f))
+                          .border(1.dp, MaterialTheme.colors.primary.copy(alpha = 0.5f), CircleShape)
+                      }
+
+                      Box(
+                        itemModifier,
+                        contentAlignment = Alignment.Center
+                      ) {
+                        ReactionIcon(r.text, 18.sp)
+                      }
                     }
                   }
                 }
@@ -407,10 +435,10 @@ fun ChatItemView(
                   }
                 }
                 cItem.content.msgContent != null && cItem.id >= 0 && !cItem.isReport -> {
-                  DefaultDropdownMenu(showMenu) {
-                    if (cInfo.featureEnabled(ChatFeature.Reactions) && cItem.allowAddReaction) {
-                      MsgReactionsMenu()
-                    }
+                  val originalColors = MaterialTheme.colors
+                  val gapPx = with(LocalDensity.current) { 6.dp.roundToPx() }
+
+                  DefaultDropdownMenu(showMenu, offset = DpOffset(0.dp, 0.dp)) {
                     if (cItem.meta.itemDeleted == null && !live && !cItem.localNote && cInfo.sendMsgEnabled) {
                       ItemAction(stringResource(MR.strings.reply_verb), painterResource(MR.images.ic_reply), onClick = {
                         if (composeState.value.editing) {
@@ -504,6 +532,27 @@ fun ChatItemView(
                     if (cItem.canBeDeletedForSelf) {
                       Divider()
                       SelectItemAction(showMenu, selectChatItem)
+                    }
+                  }
+
+                  if (cInfo.featureEnabled(ChatFeature.Reactions) && showMenu.value) {
+                    androidx.compose.ui.window.Popup(
+                      popupPositionProvider = object : androidx.compose.ui.window.PopupPositionProvider {
+                        override fun calculatePosition(
+                          anchorBounds: androidx.compose.ui.unit.IntRect,
+                          windowSize: androidx.compose.ui.unit.IntSize,
+                          layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+                          popupContentSize: androidx.compose.ui.unit.IntSize
+                        ): androidx.compose.ui.unit.IntOffset {
+                          val x = anchorBounds.left
+                          val y = (anchorBounds.top - gapPx - popupContentSize.height).coerceAtLeast(0)
+                          val maxX = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
+                          return androidx.compose.ui.unit.IntOffset(x.coerceIn(0, maxX), y)
+                        }
+                      },
+                      properties = androidx.compose.ui.window.PopupProperties(focusable = false)
+                    ) {
+                      MsgReactionsMenu(menuSurfaceColor = originalColors.surface)
                     }
                   }
                 }
@@ -1104,17 +1153,15 @@ fun ItemAction(text: String, icon: Painter, color: Color = Color.Unspecified, on
   val finalColor = if (color == Color.Unspecified) {
     MenuTextColor
   } else color
-  DropdownMenuItem(onClick, contentPadding = PaddingValues(horizontal = DEFAULT_PADDING * 1.5f)) {
+  DropdownMenuItem(onClick, contentPadding = PaddingValues(horizontal = DEFAULT_PADDING)) {
     Row(verticalAlignment = Alignment.CenterVertically) {
+      Icon(icon, text, tint = finalColor)
+      Spacer(Modifier.width(8.dp))
       Text(
         text,
-        modifier = Modifier
-          .fillMaxWidth()
-          .weight(1F)
-          .padding(end = 15.dp),
+        modifier = Modifier.weight(1F),
         color = finalColor
       )
-      Icon(icon, text, tint = finalColor)
     }
   }
 }
@@ -1124,23 +1171,21 @@ fun ItemAction(text: String, icon: ImageBitmap, textColor: Color = Color.Unspeci
   val finalColor = if (textColor == Color.Unspecified) {
     MenuTextColor
   } else textColor
-  DropdownMenuItem(onClick, contentPadding = PaddingValues(horizontal = DEFAULT_PADDING * 1.5f)) {
+  DropdownMenuItem(onClick, contentPadding = PaddingValues(horizontal = DEFAULT_PADDING)) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-      Text(
-        text,
-        modifier = Modifier
-          .fillMaxWidth()
-          .weight(1F)
-          .padding(end = 15.dp),
-        color = finalColor,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis
-      )
       if (iconColor == Color.Unspecified) {
         Image(icon, text, Modifier.size(22.dp))
       } else {
         Icon(icon, text, Modifier.size(22.dp), tint = iconColor)
       }
+      Spacer(Modifier.width(8.dp))
+      Text(
+        text,
+        modifier = Modifier.weight(1F),
+        color = finalColor,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis
+      )
     }
   }
 }
@@ -1156,19 +1201,17 @@ fun ItemAction(
   val finalColor = if (color == Color.Unspecified) {
     MenuTextColor
   } else color
-  DropdownMenuItem(onClick, contentPadding = PaddingValues(horizontal = DEFAULT_PADDING * 1.5f)) {
+  DropdownMenuItem(onClick, contentPadding = PaddingValues(horizontal = DEFAULT_PADDING)) {
     Row(verticalAlignment = Alignment.CenterVertically) {
+      composable()
+      Spacer(Modifier.width(8.dp))
       Text(
         text,
-        modifier = Modifier
-          .fillMaxWidth()
-          .weight(1F)
-          .padding(end = 15.dp),
+        modifier = Modifier.weight(1F),
         color = finalColor,
         maxLines = lineLimit,
         overflow = TextOverflow.Ellipsis
       )
-      composable()
     }
   }
 }
@@ -1178,17 +1221,15 @@ fun ItemAction(text: String, icon: ImageVector, onClick: () -> Unit, color: Colo
   val finalColor = if (color == Color.Unspecified) {
     MenuTextColor
   } else color
-  DropdownMenuItem(onClick, contentPadding = PaddingValues(horizontal = DEFAULT_PADDING * 1.5f)) {
+  DropdownMenuItem(onClick, contentPadding = PaddingValues(horizontal = DEFAULT_PADDING)) {
     Row(verticalAlignment = Alignment.CenterVertically) {
+      Icon(icon, text, tint = finalColor)
+      Spacer(Modifier.width(8.dp))
       Text(
         text,
-        modifier = Modifier
-          .fillMaxWidth()
-          .weight(1F)
-          .padding(end = 15.dp),
+        modifier = Modifier.weight(1F),
         color = finalColor
       )
-      Icon(icon, text, tint = finalColor)
     }
   }
 }
