@@ -3037,14 +3037,22 @@ private fun ButtonRow(horizontalArrangement: Arrangement.Horizontal, content: @C
 
 @Composable
 private fun DateSeparator(date: Instant) {
-  Text(
-    text = getTimestampDateText(date),
-    Modifier.padding(vertical = DEFAULT_PADDING_HALF + 4.dp, horizontal = DEFAULT_PADDING_HALF).fillMaxWidth(),
-    fontSize = 14.sp,
-    fontWeight = FontWeight.Medium,
-    textAlign = TextAlign.Center,
-    color = MaterialTheme.colors.secondary
-  )
+  Box(
+    Modifier.fillMaxWidth().padding(vertical = DEFAULT_PADDING_HALF),
+    contentAlignment = Alignment.Center
+  ) {
+    Text(
+      text = getTimestampDateText(date),
+      Modifier
+        .background(color = MaterialTheme.colors.secondaryVariant, shape = RoundedCornerShape(25.dp))
+        .padding(vertical = 4.dp, horizontal = 8.dp)
+        .clip(RoundedCornerShape(25.dp)),
+      fontSize = 14.sp,
+      fontWeight = FontWeight.Medium,
+      textAlign = TextAlign.Center,
+      color = MaterialTheme.colors.secondary
+    )
+  }
 }
 
 @Composable
