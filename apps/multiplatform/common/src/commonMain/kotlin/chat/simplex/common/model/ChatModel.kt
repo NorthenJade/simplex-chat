@@ -1776,6 +1776,10 @@ sealed class ChatInfo: SomeChat, NamedChat {
       else -> null
     }
 
+  val tagEmojis: List<String> get() = chatTags?.mapNotNull { tagId ->
+    ChatModel.userTags.value.find { it.chatTagId == tagId }?.chatTagEmoji
+  } ?: emptyList()
+
   val nextNtfMode: MsgFilter? get() = this.chatSettings?.enableNtfs?.nextMode(mentions = this.hasMentions)
 
   val hasMentions: Boolean get() = this is Group

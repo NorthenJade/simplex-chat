@@ -42,7 +42,7 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 @Composable
-fun ChatInfoImage(chatInfo: ChatInfo, size: Dp, iconColor: Color = MaterialTheme.colors.secondaryVariant, shadow: Boolean = false) {
+fun ChatInfoImage(chatInfo: ChatInfo, size: Dp, iconColor: Color = MaterialTheme.colors.secondaryVariant, shadow: Boolean = false, showTagEmojis: Boolean = false) {
   val icon =
     when (chatInfo) {
       is ChatInfo.Group -> chatInfo.groupInfo.chatIconName
@@ -50,7 +50,7 @@ fun ChatInfoImage(chatInfo: ChatInfo, size: Dp, iconColor: Color = MaterialTheme
       is ChatInfo.Direct -> chatInfo.contact.chatIconName
       else -> MR.images.ic_account_circle_filled
     }
-  ProfileImage(size, chatInfo.image, icon, if (chatInfo is ChatInfo.Local) NoteFolderIconColor else iconColor)
+  ProfileImage(size, chatInfo.image, icon, if (chatInfo is ChatInfo.Local) NoteFolderIconColor else iconColor, tagEmojis = if (showTagEmojis) chatInfo.tagEmojis else emptyList())
 }
 
 @Composable
@@ -72,7 +72,8 @@ fun ProfileImage(
   color: Color = MaterialTheme.colors.secondaryVariant,
   backgroundColor: Color? = null,
   blurred: Boolean = false,
-  async: Boolean = false
+  async: Boolean = false,
+  tagEmojis: List<String> = emptyList()
 ) {
   Box(Modifier.size(size)) {
     if (image == null) {
@@ -115,6 +116,19 @@ fun ProfileImage(
           contentScale = ContentScale.Crop,
           modifier = ProfileIconModifier(size, blurred = blurred)
         )
+      }
+    }
+    if (tagEmojis.isNotEmpty()) {
+      Row(
+        Modifier
+          .align(Alignment.TopEnd)
+          .padding(end = size / 24, top = size / 24)
+          .background(MaterialTheme.colors.background.copy(alpha = 0.6f), CircleShape)
+          .padding(horizontal = size / 24, vertical = size / 48)
+      ) {
+        tagEmojis.take(3).forEach { emoji ->
+          Text(emoji, fontSize = (size.value / 4).sp)
+        }
       }
     }
   }

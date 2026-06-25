@@ -81,7 +81,7 @@ fun ContactPreviewView(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(contentAlignment = Alignment.BottomEnd) {
-            ChatInfoImage(cInfo, size = 42.dp)
+            ChatInfoImage(cInfo, size = 42.dp, showTagEmojis = true)
         }
 
         Spacer(Modifier.width(DEFAULT_SPACE_AFTER_ICON))
