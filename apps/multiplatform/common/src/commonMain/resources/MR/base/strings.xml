@@ -1572,6 +1572,7 @@
   <string name="settings_section_title_icon">App icon</string>
   <string name="settings_section_title_themes">Themes</string>
   <string name="settings_section_title_profile_images">Profile images</string>
+  <string name="settings_show_member_avatars">Show member avatars</string>
   <string name="settings_section_title_message_shape">Message shape</string>
   <string name="settings_message_shape_corner">Corner</string>
   <string name="settings_message_shape_tail">Tail</string>

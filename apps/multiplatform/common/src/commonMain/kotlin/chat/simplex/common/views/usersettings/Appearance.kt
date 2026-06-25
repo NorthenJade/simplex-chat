@@ -87,6 +87,7 @@ object AppearanceScope {
           )
         )
       }
+      SettingsPreferenceItem(icon = null, stringResource(MR.strings.settings_show_member_avatars), controller.appPrefs.showMemberAvatarsInChat)
     }
   }
 
@@ -176,6 +177,7 @@ object AppearanceScope {
       }
     }
   }
+
 
   @Composable
   fun MessageShapeSection() {
