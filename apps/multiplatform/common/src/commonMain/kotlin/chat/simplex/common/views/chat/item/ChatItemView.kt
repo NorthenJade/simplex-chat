@@ -153,7 +153,14 @@ fun ChatItemView(
             }
           }
 
-          var modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp).clip(RoundedCornerShape(8.dp))
+          val reactionBgColor = if (r.userReacted) MaterialTheme.colors.primary.copy(alpha = 0.15f) else MaterialTheme.colors.secondary.copy(alpha = 0.12f)
+          val reactionBorderColor = if (r.userReacted) MaterialTheme.colors.primary.copy(alpha = 0.4f) else MaterialTheme.colors.secondary.copy(alpha = 0.25f)
+          var modifier = Modifier
+            .padding(horizontal = 5.dp, vertical = 2.dp)
+            .offset(y = (-8).dp)
+            .clip(RoundedCornerShape(50))
+            .background(reactionBgColor)
+            .border(1.dp, reactionBorderColor, RoundedCornerShape(50))
           if (cInfo.featureEnabled(ChatFeature.Reactions)) {
             fun showReactionsMenu() {
               when (cInfo) {
@@ -206,8 +213,8 @@ fun ChatItemView(
               )
               .onRightClick { showReactionsMenu() }
           }
-          Row(modifier.padding(2.dp), verticalAlignment = Alignment.CenterVertically) {
-            ReactionIcon(r.reaction.text, fontSize = 12.sp)
+          Row(modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            ReactionIcon(r.reaction.text, fontSize = 16.sp)
             DefaultDropdownMenu(showMenu = showReactionMenu) {
               reactionMenuItems.value.forEach { m ->
                 ItemAction(

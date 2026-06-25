@@ -2158,6 +2158,7 @@ struct ChatView: View {
                     if ci.content.msgContent != nil && (ci.meta.itemDeleted == nil || revealed) && ci.reactions.count > 0 {
                         chatItemReactions(ci)
                             .padding(.bottom, 4)
+                            .padding(.top, -10)
                     }
                 }
                 .offset(x: swipeOffset)
@@ -2254,7 +2255,7 @@ struct ChatView: View {
                 ForEach(ci.reactions, id: \.reaction) { r in
                     let v = HStack(spacing: 4) {
                         switch r.reaction {
-                        case let .emoji(emoji): Text(emoji.rawValue).font(.caption)
+                        case let .emoji(emoji): Text(emoji.rawValue).font(.body)
                         case .unknown: EmptyView()
                         }
                         if r.totalReacted > 1 {
@@ -2264,8 +2265,16 @@ struct ChatView: View {
                                 .foregroundColor(r.userReacted ? theme.colors.primary : theme.colors.secondary)
                         }
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule()
+                            .fill(r.userReacted ? theme.colors.primary.opacity(0.15) : theme.colors.secondary.opacity(0.12))
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(r.userReacted ? theme.colors.primary.opacity(0.4) : theme.colors.secondary.opacity(0.25), lineWidth: 1)
+                    )
                     .if(chat.chatInfo.featureEnabled(.reactions) && (ci.allowAddReaction || r.userReacted)) { v in
                         v.simultaneousGesture(TapGesture().onEnded {
                             setReaction(ci, add: !r.userReacted, reaction: r.reaction)
