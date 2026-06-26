@@ -119,12 +119,16 @@ fun ChatItemView(
   val sent = cItem.chatDir.sent
   val alignment = if (sent) Alignment.CenterEnd else Alignment.CenterStart
   val showMenu = remember { mutableStateOf(false) }
+  var menuOffset by remember { mutableStateOf(0.dp) }
+  LaunchedEffect(showMenu.value) {
+    if (!showMenu.value) menuOffset = 0.dp
+  }
   val fullDeleteAllowed = remember(cInfo) { cInfo.featureEnabled(ChatFeature.FullDelete) }
   val onLinkLongClick = { _: String -> showMenu.value = true }
   val live = remember { derivedStateOf { composeState.value.liveMessage != null } }.value
 
   Box(
-    modifier = (if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier),
+    modifier = (if (fillMaxWidth) Modifier.fillMaxWidth() else Modifier).offset(y = menuOffset),
     contentAlignment = alignment,
   ) {
     val info = cItem.meta.itemStatus.statusInto
@@ -435,124 +439,182 @@ fun ChatItemView(
                   }
                 }
                 cItem.content.msgContent != null && cItem.id >= 0 && !cItem.isReport -> {
-                  val originalColors = MaterialTheme.colors
-                  val gapPx = with(LocalDensity.current) { 6.dp.roundToPx() }
+                  if (showMenu.value) {
+                    val isSent = cItem.chatDir.sent
+                    val reactionsEnabled = cInfo.featureEnabled(ChatFeature.Reactions)
+                    val showBelowState = remember { mutableStateOf(true) }
+                    val originalColors = MaterialTheme.colors
+                    val density = LocalDensity.current
+                    val gapPx = with(density) { 6.dp.roundToPx() }
 
-                  DefaultDropdownMenu(showMenu, offset = DpOffset(0.dp, 0.dp)) {
-                    if (cItem.meta.itemDeleted == null && !live && !cItem.localNote && cInfo.sendMsgEnabled) {
-                      ItemAction(stringResource(MR.strings.reply_verb), painterResource(MR.images.ic_reply), onClick = {
-                        if (composeState.value.editing) {
-                          composeState.value = ComposeState(contextItem = ComposeContextItem.QuotedItem(cItem), useLinkPreviews = useLinkPreviews)
-                        } else {
-                          composeState.value = composeState.value.copy(contextItem = ComposeContextItem.QuotedItem(cItem))
-                        }
-                        showMenu.value = false
-                      })
-                    }
-                    val clipboard = LocalClipboardManager.current
-                    val cachedRemoteReqs = remember { CIFile.cachedRemoteFileRequests }
-                    val copyAndShareAllowed = when {
-                      cItem.content.text.isNotEmpty() -> true
-                      cItem.file?.forwardingAllowed() == true -> true
-                      else -> false
-                    }
+                    @Composable
+                    fun MsgContextMenuContent() {
+                      val clipboard = LocalClipboardManager.current
+                      val cachedRemoteReqs = remember { CIFile.cachedRemoteFileRequests }
+                      val copyAndShareAllowed = when {
+                        cItem.content.text.isNotEmpty() -> true
+                        cItem.file?.forwardingAllowed() == true -> true
+                        else -> false
+                      }
+                      Surface(color = originalColors.surface, shape = RoundedCornerShape(8.dp)) {
+                        Column(Modifier.width(IntrinsicSize.Max)) {
+                          if (cItem.meta.itemDeleted == null && !live && !cItem.localNote && cInfo.sendMsgEnabled) {
+                            ItemAction(stringResource(MR.strings.reply_verb), painterResource(MR.images.ic_reply), onClick = {
+                              if (composeState.value.editing) {
+                                composeState.value = ComposeState(contextItem = ComposeContextItem.QuotedItem(cItem), useLinkPreviews = useLinkPreviews)
+                              } else {
+                                composeState.value = composeState.value.copy(contextItem = ComposeContextItem.QuotedItem(cItem))
+                              }
+                              showMenu.value = false
+                            })
+                          }
 
-                    if (copyAndShareAllowed) {
-                      ItemAction(stringResource(MR.strings.share_verb), painterResource(MR.images.ic_share), onClick = {
-                        var fileSource = getLoadedFileSource(cItem.file)
-                        val shareIfExists = {
-                          when (val f = fileSource) {
-                            null -> clipboard.shareText(cItem.content.text)
-                            else -> shareFile(cItem.text, f)
+                          if (copyAndShareAllowed) {
+                            ItemAction(stringResource(MR.strings.share_verb), painterResource(MR.images.ic_share), onClick = {
+                              var fileSource = getLoadedFileSource(cItem.file)
+                              val shareIfExists = {
+                                when (val f = fileSource) {
+                                  null -> clipboard.shareText(cItem.content.text)
+                                  else -> shareFile(cItem.text, f)
+                                }
+                                showMenu.value = false
+                              }
+                              if (chatModel.connectedToRemote() && fileSource == null) {
+                                withLongRunningApi(slow = 600_000) {
+                                  cItem.file?.loadRemoteFile(true)
+                                  fileSource = getLoadedFileSource(cItem.file)
+                                  shareIfExists()
+                                }
+                              } else shareIfExists()
+                            })
                           }
-                          showMenu.value = false
+                          if (copyAndShareAllowed) {
+                            ItemAction(stringResource(MR.strings.copy_verb), painterResource(MR.images.ic_content_copy), onClick = {
+                              copyItemToClipboard(cItem, clipboard)
+                              showMenu.value = false
+                            })
+                          }
+                          if (cItem.file != null && (getLoadedFilePath(cItem.file) != null || (chatModel.connectedToRemote() && cachedRemoteReqs[cItem.file.fileSource] != false && cItem.file.loaded))) {
+                            SaveContentItemAction(cItem, saveFileLauncher, showMenu)
+                          } else if (cItem.file != null && cItem.file.fileStatus is CIFileStatus.RcvInvitation && fileSizeValid(cItem.file, ciSenderProfile(cItem, chat.chatInfo))) {
+                            ItemAction(stringResource(MR.strings.download_file), painterResource(MR.images.ic_arrow_downward), onClick = {
+                              withBGApi {
+                                Log.d(TAG, "ChatItemView downloadFileAction")
+                                val user = chatModel.currentUser.value
+                                if (user != null) {
+                                  controller.receiveFile(rhId, user, cItem.file.fileId)
+                                }
+                              }
+                              showMenu.value = false
+                            })
+                          }
+                          if (cItem.meta.editable && cItem.content.msgContent !is MsgContent.MCVoice && !live) {
+                            ItemAction(stringResource(MR.strings.edit_verb), painterResource(MR.images.ic_edit_filled), onClick = {
+                              composeState.value = ComposeState(editingItem = cItem, useLinkPreviews = useLinkPreviews)
+                              showMenu.value = false
+                            })
+                          }
+                          if (cItem.meta.itemDeleted == null &&
+                            (cItem.file == null || cItem.file.forwardingAllowed()) &&
+                            !cItem.isLiveDummy && !live
+                          ) {
+                            ItemAction(stringResource(MR.strings.forward_chat_item), painterResource(MR.images.ic_forward), onClick = {
+                              forwardItem(cInfo, cItem)
+                              showMenu.value = false
+                            })
+                          }
+                          ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
+                          if (revealed.value) {
+                            HideItemAction(revealed, showMenu, reveal)
+                          }
+                          if (cItem.meta.itemDeleted == null && cItem.file != null && cItem.file.cancelAction != null && !cItem.localNote) {
+                            CancelFileItemAction(cItem.file.fileId, showMenu, cancelFile = cancelFile, cancelAction = cItem.file.cancelAction)
+                          }
+                          if (!(live && cItem.meta.isLive) && !preview) {
+                            DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
+                          }
+                          if (cItem.chatDir !is CIDirection.GroupSnd) {
+                            val groupInfo = cItem.memberToModerate(cInfo)?.first
+                            if (groupInfo != null) {
+                              ModerateItemAction(cItem, questionText = moderateMessageQuestionText(cInfo.featureEnabled(ChatFeature.FullDelete), 1), showMenu, deleteMessage)
+                            } else if (cItem.meta.itemDeleted == null && cInfo is ChatInfo.Group && cInfo.groupInfo.groupFeatureEnabled(GroupFeature.Reports) && cInfo.groupInfo.membership.memberRole == GroupMemberRole.Member && !live) {
+                              ReportItemAction(cItem, composeState, showMenu)
+                            }
+                          }
+                          if (cItem.canBeDeletedForSelf) {
+                            Divider()
+                            SelectItemAction(showMenu, selectChatItem)
+                          }
                         }
-                        if (chatModel.connectedToRemote() && fileSource == null) {
-                          withLongRunningApi(slow = 600_000) {
-                            cItem.file?.loadRemoteFile(true)
-                            fileSource = getLoadedFileSource(cItem.file)
-                            shareIfExists()
-                          }
-                        } else shareIfExists()
-                      })
-                    }
-                    if (copyAndShareAllowed) {
-                      ItemAction(stringResource(MR.strings.copy_verb), painterResource(MR.images.ic_content_copy), onClick = {
-                        copyItemToClipboard(cItem, clipboard)
-                        showMenu.value = false
-                      })
-                    }
-                    if (cItem.file != null && (getLoadedFilePath(cItem.file) != null || (chatModel.connectedToRemote() && cachedRemoteReqs[cItem.file.fileSource] != false && cItem.file.loaded))) {
-                      SaveContentItemAction(cItem, saveFileLauncher, showMenu)
-                    } else if (cItem.file != null && cItem.file.fileStatus is CIFileStatus.RcvInvitation && fileSizeValid(cItem.file, ciSenderProfile(cItem, chat.chatInfo))) {
-                      ItemAction(stringResource(MR.strings.download_file), painterResource(MR.images.ic_arrow_downward), onClick = {
-                        withBGApi {
-                          Log.d(TAG, "ChatItemView downloadFileAction")
-                          val user = chatModel.currentUser.value
-                          if (user != null) {
-                            controller.receiveFile(rhId, user, cItem.file.fileId)
-                          }
-                        }
-                        showMenu.value = false
-                      })
-                    }
-                    if (cItem.meta.editable && cItem.content.msgContent !is MsgContent.MCVoice && !live) {
-                      ItemAction(stringResource(MR.strings.edit_verb), painterResource(MR.images.ic_edit_filled), onClick = {
-                        composeState.value = ComposeState(editingItem = cItem, useLinkPreviews = useLinkPreviews)
-                        showMenu.value = false
-                      })
-                    }
-                    if (cItem.meta.itemDeleted == null &&
-                      (cItem.file == null || cItem.file.forwardingAllowed()) &&
-                      !cItem.isLiveDummy && !live
-                    ) {
-                      ItemAction(stringResource(MR.strings.forward_chat_item), painterResource(MR.images.ic_forward), onClick = {
-                        forwardItem(cInfo, cItem)
-                        showMenu.value = false
-                      })
-                    }
-                    ItemInfoAction(cInfo, cItem, showItemDetails, showMenu)
-                    if (revealed.value) {
-                      HideItemAction(revealed, showMenu, reveal)
-                    }
-                    if (cItem.meta.itemDeleted == null && cItem.file != null && cItem.file.cancelAction != null && !cItem.localNote) {
-                      CancelFileItemAction(cItem.file.fileId, showMenu, cancelFile = cancelFile, cancelAction = cItem.file.cancelAction)
-                    }
-                    if (!(live && cItem.meta.isLive) && !preview) {
-                      DeleteItemAction(chatsCtx, cInfo, cItem, revealed, showMenu, questionText = deleteMessageQuestionText(), deleteMessage, deleteMessages)
-                    }
-                    if (cItem.chatDir !is CIDirection.GroupSnd) {
-                      val groupInfo = cItem.memberToModerate(cInfo)?.first
-                      if (groupInfo != null) {
-                        ModerateItemAction(cItem, questionText = moderateMessageQuestionText(cInfo.featureEnabled(ChatFeature.FullDelete), 1), showMenu, deleteMessage)
-                      } else if (cItem.meta.itemDeleted == null && cInfo is ChatInfo.Group && cInfo.groupInfo.groupFeatureEnabled(GroupFeature.Reports) && cInfo.groupInfo.membership.memberRole == GroupMemberRole.Member && !live) {
-                        ReportItemAction(cItem, composeState, showMenu)
                       }
                     }
-                    if (cItem.canBeDeletedForSelf) {
-                      Divider()
-                      SelectItemAction(showMenu, selectChatItem)
-                    }
-                  }
 
-                  if (cInfo.featureEnabled(ChatFeature.Reactions) && showMenu.value) {
-                    androidx.compose.ui.window.Popup(
-                      popupPositionProvider = object : androidx.compose.ui.window.PopupPositionProvider {
-                        override fun calculatePosition(
-                          anchorBounds: androidx.compose.ui.unit.IntRect,
-                          windowSize: androidx.compose.ui.unit.IntSize,
-                          layoutDirection: androidx.compose.ui.unit.LayoutDirection,
-                          popupContentSize: androidx.compose.ui.unit.IntSize
-                        ): androidx.compose.ui.unit.IntOffset {
-                          val x = anchorBounds.left
-                          val y = (anchorBounds.top - gapPx - popupContentSize.height).coerceAtLeast(0)
-                          val maxX = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
-                          return androidx.compose.ui.unit.IntOffset(x.coerceIn(0, maxX), y)
+                    // Shared positioning logic
+                    @Composable
+                    fun rememberPositionProvider(): androidx.compose.ui.window.PopupPositionProvider {
+                      return remember(isSent, reactionsEnabled) {
+                        object : androidx.compose.ui.window.PopupPositionProvider {
+                          override fun calculatePosition(
+                            anchorBounds: androidx.compose.ui.unit.IntRect,
+                            windowSize: androidx.compose.ui.unit.IntSize,
+                            layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+                            popupContentSize: androidx.compose.ui.unit.IntSize
+                          ): androidx.compose.ui.unit.IntOffset {
+                            val spaceAbove = anchorBounds.top
+                            val spaceBelow = windowSize.height - anchorBounds.bottom
+                            val below = spaceBelow >= spaceAbove
+                            showBelowState.value = below
+
+                            val x = if (isSent) anchorBounds.right - popupContentSize.width else anchorBounds.left
+                            val y = if (below) anchorBounds.bottom + gapPx else anchorBounds.top - gapPx - popupContentSize.height
+
+                            val maxX = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
+                            val maxY = (windowSize.height - popupContentSize.height).coerceAtLeast(0)
+                            return androidx.compose.ui.unit.IntOffset(x.coerceIn(0, maxX), y.coerceIn(0, maxY))
+                          }
                         }
-                      },
-                      properties = androidx.compose.ui.window.PopupProperties(focusable = false)
+                      }
+                    }
+
+                    androidx.compose.ui.window.Popup(
+                      popupPositionProvider = rememberPositionProvider(),
+                      properties = androidx.compose.ui.window.PopupProperties(
+                        focusable = false,
+                        dismissOnClickOutside = true,
+                        dismissOnBackPress = true
+                      ),
+                      onDismissRequest = { showMenu.value = false }
                     ) {
-                      MsgReactionsMenu(menuSurfaceColor = originalColors.surface)
+                      Column(
+                        horizontalAlignment = if (isSent) Alignment.End else Alignment.Start,
+                        modifier = Modifier.clickable(
+                          interactionSource = remember { MutableInteractionSource() },
+                          indication = null,
+                          onClick = { showMenu.value = false }
+                        )
+                      ) {
+                        if (showBelowState.value) {
+                          if (reactionsEnabled) {
+                            Box(Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { /* consume */ }) {
+                              MsgReactionsMenu(menuSurfaceColor = originalColors.surface)
+                            }
+                            Spacer(Modifier.height(6.dp))
+                          }
+                          Box(Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { /* consume */ }) {
+                            MsgContextMenuContent()
+                          }
+                        } else {
+                          Box(Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { /* consume */ }) {
+                            MsgContextMenuContent()
+                          }
+                          if (reactionsEnabled) {
+                            Spacer(Modifier.height(6.dp))
+                            Box(Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { /* consume */ }) {
+                              MsgReactionsMenu(menuSurfaceColor = originalColors.surface)
+                            }
+                          }
+                        }
+                      }
                     }
                   }
                 }
