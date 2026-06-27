@@ -42,33 +42,110 @@ import dev.icerock.moko.resources.compose.painterResource
 import dev.icerock.moko.resources.compose.stringResource
 import kotlinx.coroutines.*
 
+sealed class ReorderableFilter {
+  data class Preset(val kind: PresetTagKind) : ReorderableFilter()
+  data class User(val tagId: Long, val tag: ChatTag?) : ReorderableFilter()
+  object Divider : ReorderableFilter()
+
+  val id: String get() = when(this) {
+    is Preset -> "preset:${kind.name}"
+    is User -> "user:$tagId"
+    Divider -> "divider"
+  }
+}
+
 // Spec: spec/client/chat-list.md#TagListView
 @Composable
 fun TagListView(rhId: Long?, chat: Chat? = null, close: () -> Unit, reorderMode: Boolean) {
-  val userTags = remember { chatModel.userTags }
+  val userTagsState = remember { chatModel.userTags }
+  val userTags = userTagsState.value
   val oneHandUI = remember { appPrefs.oneHandUI.state }
   val listState = LocalAppBarHandler.current?.listState ?: rememberLazyListState()
   val saving = remember { mutableStateOf(false) }
-  val chatTagIds = derivedStateOf { chat?.chatInfo?.chatTags ?: emptyList() }
+  val chatTagIds = remember { derivedStateOf { chat?.chatInfo?.chatTags ?: emptyList() } }
 
-  fun reorderTags(tagIds: List<Long>) {
-    saving.value = true
-    withBGApi {
-      try {
-        chatModel.controller.apiReorderChatTags(rhId, tagIds)
-      } catch (e: Exception) {
-        Log.d(TAG, "ChatListTag reorderTags error: ${e.message}")
-      } finally {
-        saving.value = false
+  val reorderableItemsState = remember { mutableStateOf<List<ReorderableFilter>>(emptyList()) }
+
+  LaunchedEffect(userTags, reorderMode) {
+    if (reorderMode) {
+      val savedOrder = appPrefs.tagsOrder.get()?.split(",") ?: emptyList()
+      val allPossiblePresets = PresetTagKind.entries.map { ReorderableFilter.Preset(it) }
+      val allPossibleUserTags = userTags.map { ReorderableFilter.User(it.chatTagId, it) }
+
+      val orderedItems = mutableListOf<ReorderableFilter>()
+      var dividerAdded = false
+
+      savedOrder.forEach { id ->
+        if (id == "divider") {
+          orderedItems.add(ReorderableFilter.Divider)
+          dividerAdded = true
+        } else if (id.startsWith("preset:")) {
+          val kindName = id.substringAfter("preset:")
+          val kind = PresetTagKind.entries.find { it.name == kindName }
+          if (kind != null) orderedItems.add(ReorderableFilter.Preset(kind))
+        } else if (id.startsWith("user:")) {
+          val tagId = id.substringAfter("user:").toLongOrNull()
+          val tag = allPossibleUserTags.find { it.tagId == tagId }
+          if (tag != null) orderedItems.add(tag)
+        }
+      }
+
+      // Add missing items
+      allPossiblePresets.forEach { p -> if (orderedItems.none { it is ReorderableFilter.Preset && it.kind == p.kind }) orderedItems.add(0, p) }
+      allPossibleUserTags.forEach { u -> if (orderedItems.none { it is ReorderableFilter.User && it.tagId == u.tagId }) orderedItems.add(u) }
+      if (!dividerAdded) {
+        // Default: presets above, users below
+        val firstUserIndex = orderedItems.indexOfFirst { it is ReorderableFilter.User }
+        if (firstUserIndex != -1) orderedItems.add(firstUserIndex, ReorderableFilter.Divider)
+        else orderedItems.add(ReorderableFilter.Divider)
+      }
+      reorderableItemsState.value = orderedItems
+    }
+  }
+
+  val items = if (reorderMode) reorderableItemsState.value else userTags.map { ReorderableFilter.User(it.chatTagId, it) }
+
+  fun saveOrder(newItems: List<ReorderableFilter>) {
+    val orderString = newItems.joinToString(",") { it.id }
+    appPrefs.tagsOrder.set(orderString)
+    val dividerIndex = newItems.indexOf(ReorderableFilter.Divider)
+    appPrefs.tagsSplitIndex.set(dividerIndex)
+  }
+
+  val onMove: (Int, Int) -> Unit = { fromIndex, toIndex ->
+    if (reorderMode) {
+      val currentList = reorderableItemsState.value
+      val newList = currentList.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+      reorderableItemsState.value = newList
+      saveOrder(newList)
+      // We also need to reorder user tags in the backend if their relative order changed
+      val newUserTagsOrder = newList.filterIsInstance<ReorderableFilter.User>().map { it.tagId }
+      val oldUserTagsOrder = userTags.map { it.chatTagId }
+      if (newUserTagsOrder != oldUserTagsOrder) {
+        saving.value = true
+        withBGApi {
+          try {
+            chatModel.controller.apiReorderChatTags(rhId, newUserTagsOrder)
+          } finally {
+            saving.value = false
+          }
+        }
+      }
+    } else {
+      userTagsState.value = userTagsState.value.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+      saving.value = true
+      withBGApi {
+        try {
+          chatModel.controller.apiReorderChatTags(rhId, userTagsState.value.map { it.chatTagId })
+        } finally {
+          saving.value = false
+        }
       }
     }
   }
 
-  val dragDropState =
-    rememberDragDropState(listState) { fromIndex, toIndex ->
-      userTags.value = userTags.value.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
-      reorderTags(userTags.value.map { it.chatTagId })
-    }
+  val currentOnMove = rememberUpdatedState(onMove)
+  val dragDropState = rememberDragDropState(listState) { from, to -> currentOnMove.value(from, to) }
   val topPaddingToContent = topPaddingToContent(false)
 
   LazyColumnWithScrollBar(
@@ -97,7 +174,7 @@ fun TagListView(rhId: Long?, chat: Chat? = null, close: () -> Unit, reorderMode:
         CreateList()
       }
     }
-    itemsIndexed(userTags.value, key = { _, item -> item.chatTagId }) { index, tag ->
+    itemsIndexed(items, key = { _, item -> item.id }) { index, item ->
       DraggableItem(dragDropState, index) { isDragging ->
         val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
 
@@ -106,57 +183,98 @@ fun TagListView(rhId: Long?, chat: Chat? = null, close: () -> Unit, reorderMode:
           backgroundColor = if (isDragging) colors.surface else Color.Unspecified
         ) {
           Column {
-            val selected = chatTagIds.value.contains(tag.chatTagId)
-
-            Row(
-              Modifier
-                .fillMaxWidth()
-                .sizeIn(minHeight = DEFAULT_MIN_SECTION_ITEM_HEIGHT)
-                .clickable(
-                  enabled = !saving.value && !reorderMode,
-                  onClick = {
-                    if (chat == null) {
-                      ModalManager.start.showModalCloseable { close ->
-                        TagListEditor(
-                          rhId = rhId,
-                          tagId = tag.chatTagId,
-                          close = close,
-                          emoji = tag.chatTagEmoji,
-                          name = tag.chatTagText,
-                        )
-                      }
-                    } else {
-                      saving.value = true
-                      setTag(rhId = rhId, tagId = if (selected) null else tag.chatTagId, chat = chat, close = {
-                        saving.value = false
-                        close()
-                      })
-                    }
-                  },
-                )
-                .padding(PaddingValues(horizontal = DEFAULT_PADDING, vertical = DEFAULT_MIN_SECTION_ITEM_PADDING_VERTICAL)),
-              verticalAlignment = Alignment.CenterVertically
-            ) {
-              if (tag.chatTagEmoji != null) {
-                ReactionIcon(tag.chatTagEmoji, fontSize = 14.sp)
-              } else {
-                Icon(painterResource(MR.images.ic_label), null, Modifier.size(18.sp.toDp()), tint = MaterialTheme.colors.onBackground)
+            when (item) {
+              is ReorderableFilter.Divider -> {
+                Box(Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                  Divider(Modifier.fillMaxWidth(0.9f))
+                  Surface(
+                    color = MaterialTheme.colors.background,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                  ) {
+                    Text(
+                      stringResource(MR.strings.chat_list_hot_bar_separator),
+                      style = MaterialTheme.typography.caption,
+                      modifier = Modifier.padding(horizontal = 8.dp),
+                      color = MaterialTheme.colors.secondary
+                    )
+                  }
+                }
               }
-              Spacer(Modifier.padding(horizontal = 4.dp))
-              Text(
-                tag.chatTagText,
-                color = MenuTextColor,
-                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
-              )
-              if (selected) {
-                Spacer(Modifier.weight(1f))
-                Icon(painterResource(MR.images.ic_done_filled), null, Modifier.size(20.dp), tint = MaterialTheme.colors.onBackground)
-              } else if (reorderMode) {
-                Spacer(Modifier.weight(1f))
-                Icon(painterResource(MR.images.ic_drag_handle), null, Modifier.size(20.dp), tint = MaterialTheme.colors.secondary)
+              is ReorderableFilter.Preset -> {
+                val (icon, _, textRes) = presetTagLabel(item.kind, false)
+                Row(
+                  Modifier
+                    .fillMaxWidth()
+                    .sizeIn(minHeight = DEFAULT_MIN_SECTION_ITEM_HEIGHT)
+                    .padding(PaddingValues(horizontal = DEFAULT_PADDING, vertical = DEFAULT_MIN_SECTION_ITEM_PADDING_VERTICAL)),
+                  verticalAlignment = Alignment.CenterVertically
+                ) {
+                  Icon(painterResource(icon), null, Modifier.size(18.sp.toDp()), tint = MaterialTheme.colors.secondary)
+                  Spacer(Modifier.padding(horizontal = 4.dp))
+                  Text(stringResource(textRes), color = MaterialTheme.colors.secondary)
+                  if (reorderMode) {
+                    Spacer(Modifier.weight(1f))
+                    Icon(painterResource(MR.images.ic_drag_handle), null, Modifier.size(20.dp), tint = MaterialTheme.colors.secondary)
+                  }
+                }
+                Divider(Modifier.padding(horizontal = 8.dp))
+              }
+              is ReorderableFilter.User -> {
+                val tag = item.tag
+                if (tag != null) {
+                  val selected = chatTagIds.value.contains(tag.chatTagId)
+                  Row(
+                    Modifier
+                      .fillMaxWidth()
+                      .sizeIn(minHeight = DEFAULT_MIN_SECTION_ITEM_HEIGHT)
+                      .clickable(
+                        enabled = !saving.value && !reorderMode,
+                        onClick = {
+                          if (chat == null) {
+                            ModalManager.start.showModalCloseable { close ->
+                              TagListEditor(
+                                rhId = rhId,
+                                tagId = tag.chatTagId,
+                                close = close,
+                                emoji = tag.chatTagEmoji,
+                                name = tag.chatTagText,
+                              )
+                            }
+                          } else {
+                            saving.value = true
+                            setTag(rhId = rhId, tagId = if (selected) null else tag.chatTagId, chat = chat, close = {
+                              saving.value = false
+                              close()
+                            })
+                          }
+                        },
+                      )
+                      .padding(PaddingValues(horizontal = DEFAULT_PADDING, vertical = DEFAULT_MIN_SECTION_ITEM_PADDING_VERTICAL)),
+                    verticalAlignment = Alignment.CenterVertically
+                  ) {
+                    if (tag.chatTagEmoji != null) {
+                      ReactionIcon(tag.chatTagEmoji, fontSize = 14.sp)
+                    } else {
+                      Icon(painterResource(MR.images.ic_label), null, Modifier.size(18.sp.toDp()), tint = MaterialTheme.colors.onBackground)
+                    }
+                    Spacer(Modifier.padding(horizontal = 4.dp))
+                    Text(
+                      tag.chatTagText,
+                      color = MenuTextColor,
+                      fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal
+                    )
+                    if (selected) {
+                      Spacer(Modifier.weight(1f))
+                      Icon(painterResource(MR.images.ic_done_filled), null, Modifier.size(20.dp), tint = MaterialTheme.colors.onBackground)
+                    } else if (reorderMode) {
+                      Spacer(Modifier.weight(1f))
+                      Icon(painterResource(MR.images.ic_drag_handle), null, Modifier.size(20.dp), tint = MaterialTheme.colors.secondary)
+                    }
+                  }
+                  Divider(Modifier.padding(horizontal = 8.dp))
+                }
               }
             }
-            Divider(Modifier.padding(horizontal = 8.dp))
           }
         }
       }
@@ -249,7 +367,7 @@ fun ModalData.TagListEditor(
     }
   }
 
-  val showError = derivedStateOf { isDuplicateEmojiOrName.value && saving.value != false }
+  val showError = remember { derivedStateOf { isDuplicateEmojiOrName.value && saving.value != false } }
 
   ColumnWithScrollBar(Modifier.consumeWindowInsets(PaddingValues(bottom = if (oneHandUI.value) WindowInsets.ime.asPaddingValues().calculateBottomPadding().coerceIn(0.dp, WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()) else 0.dp))) {
     if (oneHandUI.value) {
@@ -359,10 +477,11 @@ fun TagListNameTextField(name: MutableState<String>, showError: State<Boolean>) 
   var focused by rememberSaveable { mutableStateOf(false) }
   val focusRequester = remember { FocusRequester() }
   val interactionSource = remember { MutableInteractionSource() }
+  val currentColors = CurrentColors.collectAsState()
   val colors = TextFieldDefaults.textFieldColors(
     backgroundColor = Color.Unspecified,
     focusedIndicatorColor = MaterialTheme.colors.secondary.copy(alpha = 0.6f),
-    unfocusedIndicatorColor = CurrentColors.value.colors.secondary.copy(alpha = 0.3f),
+    unfocusedIndicatorColor = currentColors.value.colors.secondary.copy(alpha = 0.3f),
     cursorColor = MaterialTheme.colors.secondary,
   )
   BasicTextField(

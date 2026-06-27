@@ -258,6 +258,8 @@ class AppPreferences {
   val showDeleteConversationNotice = mkBoolPreference(SHARED_PREFS_SHOW_DELETE_CONVERSATION_NOTICE, true)
   val showDeleteContactNotice = mkBoolPreference(SHARED_PREFS_SHOW_DELETE_CONTACT_NOTICE, true)
   val showSentViaProxy = mkBoolPreference(SHARED_PREFS_SHOW_SENT_VIA_RPOXY, false)
+  val tagsOrder = mkStrPreference(SHARED_PREFS_TAGS_ORDER, null)
+  val tagsSplitIndex = mkIntPreference(SHARED_PREFS_TAGS_SPLIT_INDEX, -1)
 
 
   val iosCallKitEnabled = mkBoolPreference(SHARED_PREFS_IOS_CALL_KIT_ENABLED, true)
@@ -499,6 +501,8 @@ class AppPreferences {
     private const val SHARED_PREFS_SHOW_DELETE_CONVERSATION_NOTICE = "showDeleteConversationNotice"
     private const val SHARED_PREFS_SHOW_DELETE_CONTACT_NOTICE = "showDeleteContactNotice"
     private const val SHARED_PREFS_SHOW_SENT_VIA_RPOXY = "showSentViaProxy"
+    private const val SHARED_PREFS_TAGS_ORDER = "TagsOrder"
+    private const val SHARED_PREFS_TAGS_SPLIT_INDEX = "TagsSplitIndex"
 
     private const val SHARED_PREFS_IOS_CALL_KIT_ENABLED = "iOSCallKitEnabled"
     private const val SHARED_PREFS_IOS_CALL_KIT_CALLS_IN_RECENTS = "iOSCallKitCallsInRecents"
