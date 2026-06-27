@@ -47,16 +47,17 @@ private fun sendCommand(chatModel: ChatModel, composeState: MutableState<Compose
   val developerTools = chatModel.controller.appPrefs.developerTools.get()
   val prefPerformLA = chatModel.controller.appPrefs.performLA.get()
   val s = composeState.value.message
-  if (s.text.startsWith("/sql") && (!prefPerformLA || !developerTools)) {
+  val cmdText = s.text.trimEnd()
+  if (cmdText.startsWith("/sql") && (!prefPerformLA || !developerTools)) {
     val resp = API.Error(null, ChatError.ChatErrorChat(ChatErrorType.CommandError("Failed reading: empty")))
-    chatModel.addTerminalItem(TerminalItem.cmd(null, CC.Console(s.text)))
+    chatModel.addTerminalItem(TerminalItem.cmd(null, CC.Console(cmdText)))
     chatModel.addTerminalItem(TerminalItem.resp(null, resp))
     composeState.value = ComposeState(useLinkPreviews = false)
   } else {
     withBGApi {
       // show "in progress"
       // TODO show active remote host in chat console?
-      chatModel.controller.sendCmd(chatModel.remoteHostId(), CC.Console(s.text))
+      chatModel.controller.sendCmd(chatModel.remoteHostId(), CC.Console(cmdText))
       composeState.value = ComposeState(useLinkPreviews = false)
       // hide "in progress"
     }

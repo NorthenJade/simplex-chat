@@ -574,8 +574,7 @@ fun ComposeView(
   }
 
   // TODO [short links] connectCheckLinkPreview
-  fun checkLinkPreview(): MsgContent {
-    val msgText = composeState.value.message.text
+  fun checkLinkPreview(msgText: String = composeState.value.message.text): MsgContent {
     return when (val composePreview = composeState.value.preview) {
       is ComposePreview.CLinkPreview -> {
         val parsedMsg = parseToMarkdown(msgText)
@@ -597,7 +596,7 @@ fun ComposeView(
   }
 
   suspend fun sendMemberContactInvitation() {
-    val mc = checkLinkPreview()
+    val mc = checkLinkPreview(composeState.value.message.text.trimEnd())
     sending()
     val contact = chatModel.controller.apiSendMemberContactInvitation(chat.remoteHostId, chat.chatInfo.apiId, mc)
     if (contact != null) {
@@ -611,7 +610,7 @@ fun ComposeView(
   }
 
   suspend fun sendConnectPreparedContact() {
-    val mc = checkLinkPreview()
+    val mc = checkLinkPreview(composeState.value.message.text.trimEnd())
     sending()
     val incognito = if (chat.chatInfo.profileChangeProhibited) chat.chatInfo.incognito else chatModel.controller.appPrefs.incognito.get()
     val contact = chatModel.controller.apiConnectPreparedContact(
@@ -652,7 +651,7 @@ fun ComposeView(
   }
 
   suspend fun connectPreparedGroup() {
-    val mc = checkLinkPreview()
+    val mc = checkLinkPreview(composeState.value.message.text.trimEnd())
     sending()
     val incognito = if (chat.chatInfo.profileChangeProhibited) chat.chatInfo.incognito else chatModel.controller.appPrefs.incognito.get()
     val result = chatModel.controller.apiConnectPreparedGroup(
@@ -679,7 +678,8 @@ fun ComposeView(
     val cs = composeState.value
     var sent: List<ChatItem>?
     var lastMessageFailedToSend: ComposeState? = null
-    val msgText = text ?: cs.message.text
+    val rawText = text ?: cs.message.text
+    val msgText = if (live) rawText else rawText.trimEnd()
 
     suspend fun forwardItem(rhId: Long?, forwardedItem: List<ChatItem>, fromChatInfo: ChatInfo, ttl: Int?): List<ChatItem>? {
       val chatItems = controller.apiForwardChatItems(
@@ -726,8 +726,8 @@ fun ComposeView(
 
     fun updateMsgContent(msgContent: MsgContent): MsgContent {
       return when (msgContent) {
-        is MsgContent.MCText -> checkLinkPreview()
-        is MsgContent.MCLink -> checkLinkPreview()
+        is MsgContent.MCText -> checkLinkPreview(msgText)
+        is MsgContent.MCLink -> checkLinkPreview(msgText)
         is MsgContent.MCImage -> MsgContent.MCImage(msgText, image = msgContent.image)
         is MsgContent.MCVideo -> MsgContent.MCVideo(msgText, image = msgContent.image, duration = msgContent.duration)
         is MsgContent.MCVoice -> MsgContent.MCVoice(msgText, duration = msgContent.duration)
@@ -800,7 +800,7 @@ fun ComposeView(
       if (cs.message.text.isNotEmpty()) {
         sent?.mapIndexed { index, message ->
           if (index == sent!!.lastIndex) {
-            send(chat, checkLinkPreview(), quoted = message.id, live = false, ttl = ttl, mentions = cs.memberMentions)
+            send(chat, checkLinkPreview(msgText), quoted = message.id, live = false, ttl = ttl, mentions = cs.memberMentions)
           } else {
             message
           }
@@ -823,7 +823,7 @@ fun ComposeView(
       val remoteHost = chatModel.currentRemoteHost.value
       when (val preview = cs.preview) {
         ComposePreview.NoPreview -> msgs.add(MsgContent.MCText(msgText))
-        is ComposePreview.CLinkPreview -> msgs.add(checkLinkPreview())
+        is ComposePreview.CLinkPreview -> msgs.add(checkLinkPreview(msgText))
         is ComposePreview.ChatLinkPreview -> {
           val linkStr = preview.chatLink.connLinkStr
           val text = if (msgText.isEmpty()) linkStr else "$msgText\n$linkStr"
