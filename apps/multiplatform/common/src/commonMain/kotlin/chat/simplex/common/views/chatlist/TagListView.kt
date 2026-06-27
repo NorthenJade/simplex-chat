@@ -42,18 +42,6 @@ import dev.icerock.moko.resources.compose.painterResource
 import dev.icerock.moko.resources.compose.stringResource
 import kotlinx.coroutines.*
 
-sealed class ReorderableFilter {
-  data class Preset(val kind: PresetTagKind) : ReorderableFilter()
-  data class User(val tagId: Long, val tag: ChatTag?) : ReorderableFilter()
-  object Divider : ReorderableFilter()
-
-  val id: String get() = when(this) {
-    is Preset -> "preset:${kind.name}"
-    is User -> "user:$tagId"
-    Divider -> "divider"
-  }
-}
-
 // Spec: spec/client/chat-list.md#TagListView
 @Composable
 fun TagListView(rhId: Long?, chat: Chat? = null, close: () -> Unit, reorderMode: Boolean) {
@@ -228,7 +216,7 @@ fun TagListView(rhId: Long?, chat: Chat? = null, close: () -> Unit, reorderMode:
                       .fillMaxWidth()
                       .sizeIn(minHeight = DEFAULT_MIN_SECTION_ITEM_HEIGHT)
                       .clickable(
-                        enabled = !saving.value && !reorderMode,
+                        enabled = !saving.value,
                         onClick = {
                           if (chat == null) {
                             ModalManager.start.showModalCloseable { close ->
@@ -268,6 +256,32 @@ fun TagListView(rhId: Long?, chat: Chat? = null, close: () -> Unit, reorderMode:
                       Icon(painterResource(MR.images.ic_done_filled), null, Modifier.size(20.dp), tint = MaterialTheme.colors.onBackground)
                     } else if (reorderMode) {
                       Spacer(Modifier.weight(1f))
+                      IconButton(
+                        onClick = {
+                          ModalManager.start.showModalCloseable { close ->
+                            TagListEditor(
+                              rhId = rhId,
+                              tagId = tag.chatTagId,
+                              close = close,
+                              emoji = tag.chatTagEmoji,
+                              name = tag.chatTagText,
+                            )
+                          }
+                        },
+                        modifier = Modifier.size(24.dp)
+                      ) {
+                        Icon(painterResource(MR.images.ic_edit), null, tint = MaterialTheme.colors.secondary, modifier = Modifier.size(18.dp))
+                      }
+                      Spacer(Modifier.width(8.dp))
+                      IconButton(
+                        onClick = {
+                          deleteTagDialog(rhId, tag, saving)
+                        },
+                        modifier = Modifier.size(24.dp)
+                      ) {
+                        Icon(painterResource(MR.images.ic_delete), null, tint = Color.Red, modifier = Modifier.size(18.dp))
+                      }
+                      Spacer(Modifier.width(8.dp))
                       Icon(painterResource(MR.images.ic_drag_handle), null, Modifier.size(20.dp), tint = MaterialTheme.colors.secondary)
                     }
                   }

@@ -59,6 +59,18 @@ import kotlin.time.Duration.Companion.seconds
 
 enum class PresetTagKind { GROUP_REPORTS, FAVORITES, CONTACTS, GROUPS, CHANNELS, BUSINESS, NOTES }
 
+sealed class ReorderableFilter {
+  data class Preset(val kind: PresetTagKind) : ReorderableFilter()
+  data class User(val tagId: Long, val tag: ChatTag?) : ReorderableFilter()
+  data object Divider : ReorderableFilter()
+
+  val id: String get() = when(this) {
+    is Preset -> "preset:${kind.name}"
+    is User -> "user:$tagId"
+    Divider -> "divider"
+  }
+}
+
 sealed class ActiveFilter {
   data class PresetTag(val tag: PresetTagKind) : ActiveFilter()
   data class UserTag(val tag: ChatTag) : ActiveFilter()
@@ -897,8 +909,10 @@ private fun BoxScope.ChatList(searchText: MutableState<TextFieldValue>, listStat
   val searchShowingSimplexLink = remember { mutableStateOf(false) }
   val searchChatFilteredBySimplexLink = remember { mutableStateOf<String?>(null) }
 
-  val pages = remember(presetTags.toMap(), userTags.value) {
-    val savedOrder = appPrefs.tagsOrder.get()?.split(",") ?: emptyList()
+  val tagsOrder by appPrefs.tagsOrder.state
+  
+  val pages = remember(presetTags.toMap(), userTags.value, tagsOrder) {
+    val savedOrder = tagsOrder?.split(",") ?: emptyList()
     val allPossiblePresets = PresetTagKind.entries.filter { (presetTags[it] ?: 0) > 0 }.map { ReorderableFilter.Preset(it) }
     val allPossibleUserTags = userTags.value.map { ReorderableFilter.User(it.chatTagId, it) }
 
@@ -1165,9 +1179,10 @@ private fun TagsView(searchText: MutableState<TextFieldValue>) {
   val activeFilter = remember { chatModel.activeChatTagFilter }
   val unreadTags = remember { chatModel.unreadTags }
   val rhId = chatModel.remoteHostId()
+  val tagsOrder by appPrefs.tagsOrder.state
 
-  val orderedItems = remember(userTags.value, presetTags.toMap()) {
-    val savedOrder = appPrefs.tagsOrder.get()?.split(",") ?: emptyList()
+  val orderedItems = remember(userTags.value, presetTags.toMap(), tagsOrder) {
+    val savedOrder = tagsOrder?.split(",") ?: emptyList()
     val allPossiblePresets = PresetTagKind.entries.filter { (presetTags[it] ?: 0) > 0 }.map { ReorderableFilter.Preset(it) }
     val allPossibleUserTags = userTags.value.map { ReorderableFilter.User(it.chatTagId, it) }
     
@@ -1485,6 +1500,22 @@ private fun CollapsedTagsFilterView(searchText: MutableState<TextFieldValue>, me
           else -> {}
         }
       }
+
+      Divider()
+      val rhId = chatModel.remoteHostId()
+      ItemAction(
+        stringResource(MR.strings.change_order_chat_list_menu_action),
+        painterResource(MR.images.ic_drag_handle),
+        onClick = {
+          onCloseMenuAction.value = {
+            ModalManager.start.showModalCloseable { close ->
+              TagListView(rhId = rhId, close = close, reorderMode = true)
+            }
+            onCloseMenuAction.value = {}
+          }
+          showMenu.value = false
+        }
+      )
     }
   }
 }
